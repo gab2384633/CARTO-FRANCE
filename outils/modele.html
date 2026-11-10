@@ -1,0 +1,76 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex, nofollow">
+<title>Accès protégé</title>
+<style>
+  :root{--bg:#0e1216;--panel:#141a21;--panel-2:#1b232c;--line:#293542;--fg:#eaf0f6;--muted:#93a1b0;--accent:#4c9aff;--err:#ff8a80}
+  *{box-sizing:border-box}
+  html,body{height:100%;margin:0}
+  body{font-family:system-ui,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;background:var(--bg);color:var(--fg);
+    display:flex;align-items:center;justify-content:center;padding:20px;-webkit-font-smoothing:antialiased}
+  form{width:100%;max-width:360px;background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:26px 22px}
+  .ic{width:42px;height:42px;border-radius:11px;display:grid;place-items:center;margin-bottom:14px;
+    background:linear-gradient(135deg,#1f3a5f,#2d9cdb);color:#fff}
+  h1{font-size:17px;margin:0 0 4px}
+  p{margin:0 0 18px;color:var(--muted);font-size:13px}
+  input[type=password]{width:100%;font:inherit;font-size:15px;color:var(--fg);background:var(--panel-2);border:1px solid var(--line);
+    border-radius:10px;padding:11px 12px;outline:none}
+  input[type=password]:focus{border-color:var(--accent);box-shadow:0 0 0 3px rgba(76,154,255,.18)}
+  label{display:flex;gap:8px;align-items:center;margin:12px 0 16px;font-size:13px;color:var(--muted);cursor:pointer}
+  button{width:100%;font:inherit;font-weight:600;font-size:15px;color:#fff;background:var(--accent);border:none;border-radius:10px;padding:12px;cursor:pointer}
+  button:disabled{opacity:.6;cursor:default}
+  #msg{min-height:18px;margin-top:10px;font-size:12.5px;color:var(--muted)}
+  #msg.err{color:var(--err)}
+</style>
+</head>
+<body>
+<form id="f" autocomplete="on">
+  <div class="ic"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="11" width="16" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></svg></div>
+  <h1>Accès protégé</h1>
+  <p>Saisissez la phrase de passe.</p>
+  <input type="text" name="username" value="carte" autocomplete="username" hidden>
+  <input type="password" id="pw" autocomplete="current-password" autofocus aria-label="Phrase de passe">
+  <label><input type="checkbox" id="rem" checked> Se souvenir de moi sur cet appareil</label>
+  <button id="go" type="submit">Ouvrir</button>
+  <div id="msg"></div>
+</form>
+<script>
+(function(){
+  var SEL=/*SEL*/"", ITER=/*ITER*/0, IV=/*IV*/"", DONNEES=/*DONNEES*/"";
+  var KEY='carte-cle-'+SEL;
+  var $=function(i){return document.getElementById(i)};
+  function b64(s){var b=atob(s),u=new Uint8Array(b.length);for(var i=0;i<b.length;i++)u[i]=b.charCodeAt(i);return u;}
+  function hex(h){var u=new Uint8Array(h.length/2);for(var i=0;i<u.length;i++)u[i]=parseInt(h.substr(2*i,2),16);return u;}
+  function norm(s){return s.normalize('NFD').replace(/[̀-ͯ]/g,'').toLowerCase().split(/[^a-z0-9]+/).filter(Boolean).join(' ');}
+  function msg(t,e){$('msg').textContent=t;$('msg').className=e?'err':'';}
+  if(!window.crypto||!crypto.subtle||!window.DecompressionStream){msg('Navigateur trop ancien : mettez-le à jour pour ouvrir la carte.',1);$('go').disabled=true;return;}
+
+  function derive(pw){
+    return crypto.subtle.importKey('raw',new TextEncoder().encode(norm(pw)),'PBKDF2',false,['deriveBits'])
+      .then(function(k){return crypto.subtle.deriveBits({name:'PBKDF2',hash:'SHA-256',salt:hex(SEL),iterations:ITER},k,256);});
+  }
+  function ouvrir(raw){
+    return crypto.subtle.importKey('raw',raw,'AES-GCM',false,['decrypt'])
+      .then(function(k){return crypto.subtle.decrypt({name:'AES-GCM',iv:b64(IV)},k,b64(DONNEES));})
+      .then(function(buf){return new Response(new Blob([buf]).stream().pipeThrough(new DecompressionStream('gzip'))).text();})
+      .then(function(html){document.open();document.write(html);document.close();});
+  }
+  function hexOf(buf){return Array.prototype.map.call(new Uint8Array(buf),function(x){return('0'+x.toString(16)).slice(-2)}).join('');}
+
+  var saved=null; try{saved=localStorage.getItem(KEY);}catch(e){}
+  if(saved){ msg('Ouverture…'); ouvrir(hex(saved)).catch(function(){ try{localStorage.removeItem(KEY);}catch(e){} msg(''); }); }
+
+  $('f').addEventListener('submit',function(ev){
+    ev.preventDefault(); var pw=$('pw').value, rem=$('rem').checked; if(!pw) return;
+    $('go').disabled=true; msg('Déchiffrement…');
+    derive(pw).then(function(raw){
+      return ouvrir(raw.slice(0)).then(function(){ if(rem){ try{localStorage.setItem(KEY,hexOf(raw));}catch(e){} } });
+    }).catch(function(){ $('go').disabled=false; msg('Phrase de passe incorrecte.',1); $('pw').select(); });
+  });
+})();
+</script>
+</body>
+</html>
